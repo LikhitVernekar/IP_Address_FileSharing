@@ -1,112 +1,135 @@
-from flask import Flask, request
-from flask_socketio import SocketIO, emit
+from flask import Flask, render_template_string, request
+from flask_socketio import SocketIO, send
 import socket
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# Store all chat history
-chat_history = []
+# Store chat history
+messages = []
 
-# Serve HTML directly from the Python script
-@app.route('/')
-def index():
-    return f"""
+# Get local IP
+hostname = socket.gethostname()
+local_ip = socket.gethostbyname(hostname)
+print(f"Server running at: http://{local_ip}:5000")
+
+html_template = """
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Simple Chat</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <title>Termux Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: flex-end;
+            margin: 0;
+            height: 100vh;
+        }
+        #chat-container {
+            width: 30%;
+            min-width: 300px;
+            height: 100%;
+            border-left: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+        }
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            border-bottom: 1px solid #ccc;
+            word-wrap: break-word;
+        }
+        #input-container {
+            display: flex;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        #message {
+            flex: 1;
+            height: 40px;
+            resize: none;
+            padding: 5px;
+            font-size: 14px;
+        }
+        #send {
+            padding: 5px 10px;
+            font-size: 14px;
+            margin-left: 5px;
+        }
+    </style>
 </head>
 <body>
-    <h2>💬 Chat</h2>
-    <div id="chat" style="border:1px solid black;height:300px;overflow-y:auto;padding:5px;"></div>
-    <textarea id="message" placeholder="Type a message..." style="width:100%;height:60px;"></textarea>
-    <button onclick="sendMessage()">Send</button>
+    <div id="chat-container">
+        <div id="messages"></div>
+        <div id="input-container">
+            <textarea id="message" placeholder="Type your message..." rows="1"></textarea>
+            <button id="send">Send</button>
+        </div>
+    </div>
 
     <script>
         var socket = io();
         var ipAddress = "";
 
-        // On connection, store our IP from server
-        socket.on('set_ip', function(data) {{
-            ipAddress = data;
-        }});
+        fetch('/get_ip').then(res => res.json()).then(data => {
+            ipAddress = data.ip;
+        });
 
-        // Load old messages
-        socket.on('chat_history', function(history) {{
-            var chatDiv = document.getElementById('chat');
-            chatDiv.innerHTML = "";
-            history.forEach(function(msg) {{
-                var p = document.createElement('p');
-                p.textContent = msg;
-                chatDiv.appendChild(p);
-            }});
-            chatDiv.scrollTop = chatDiv.scrollHeight;
-        }});
+        socket.on('message', function(msg) {
+            var messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML += "<div><b>" + msg.user + ":</b> " + msg.text + "</div>";
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
 
-        // Receive new message
-        socket.on('message', function(msg) {{
-            var chatDiv = document.getElementById('chat');
-            var p = document.createElement('p');
-            p.textContent = msg;
-            chatDiv.appendChild(p);
-            chatDiv.scrollTop = chatDiv.scrollHeight;
-        }});
+        socket.on('load_messages', function(msgs) {
+            var messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = "";
+            msgs.forEach(function(m) {
+                messagesDiv.innerHTML += "<div><b>" + m.user + ":</b> " + m.text + "</div>";
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
 
-        // Send message function
-        function sendMessage() {{
-            var messageBox = document.getElementById('message');
-            var text = messageBox.value.trim();
-            if(text !== "") {{
-                socket.emit('message', text);
-                messageBox.value = "";
-            }}
-        }}
+        function sendMessage() {
+            var msg = document.getElementById('message').value.trim();
+            if (msg !== "") {
+                socket.send({user: ipAddress, text: msg});
+                document.getElementById('message').value = "";
+            }
+        }
 
-        // Handle Enter and Shift+Enter
-        document.getElementById('message').addEventListener('keydown', function(e) {{
-            if (e.key === "Enter" && !e.shiftKey) {{
+        document.getElementById('send').onclick = sendMessage;
+
+        document.getElementById('message').addEventListener("keydown", function(e) {
+            if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
-            }}
-        }});
+            }
+        });
     </script>
 </body>
 </html>
 """
 
-# Handle new connection
+@app.route('/')
+def index():
+    return render_template_string(html_template)
+
+@app.route('/get_ip')
+def get_ip():
+    return {"ip": request.remote_addr}
+
 @socketio.on('connect')
 def handle_connect():
-    client_ip = request.remote_addr
-    socketio.emit('set_ip', client_ip, to=request.sid)
-    socketio.emit('chat_history', chat_history, to=request.sid)
+    socketio.emit('load_messages', messages, to=request.sid)
 
-# Handle incoming message
 @socketio.on('message')
 def handle_message(msg):
-    client_ip = request.remote_addr
-    final_msg = f"[{client_ip}] {msg}"
-    chat_history.append(final_msg)
-    emit('message', final_msg, broadcast=True)
-
-# Get local IP for displaying server URL
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
+    messages.append(msg)
+    send(msg, broadcast=True)
 
 if __name__ == '__main__':
-    local_ip = get_local_ip()
-    print("\n📡 Chat server running!")
-    print(f"Access on this device: http://localhost:5000")
-    print(f"Access from other devices: http://{local_ip}:5000\n")
     socketio.run(app, host='0.0.0.0', port=5000)
