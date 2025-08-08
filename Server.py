@@ -111,6 +111,8 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             width: 100%;  
             padding: 6px;  
             margin-bottom: 10px;  
+            padding-right: 50px; /* space for show/hide button */  
+            box-sizing: border-box;
         }}  
         .modal-actions {{  
             display: flex;  
@@ -122,9 +124,11 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             border: none;  
             cursor: pointer;  
             position: absolute;  
-            right: 35px;  
-            top: 53px;  
+            right: 40px;  
+            top: 54px;  
             font-size: 14px;  
+            padding: 0 5px;  
+            user-select: none;  
         }}  
         .upload-container {{  
             display: flex;  
@@ -181,11 +185,12 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             modalFile = file;  
             modalCallback = callback;  
             document.getElementById('password-modal-bg').classList.add('active');  
-            document.getElementById('password-input').value = '';  
-            document.getElementById('password-input').type = 'password';  
+            const passInput = document.getElementById('password-input');
+            passInput.value = '';  
+            passInput.type = 'password';  
             document.getElementById('show-pass-btn').textContent = 'Show';  
             document.getElementById('modal-error').style.display = 'none';  
-            document.getElementById('password-input').focus();  
+            passInput.focus();  
         }}  
         function hidePasswordModal() {{  
             document.getElementById('password-modal-bg').classList.remove('active');  
@@ -358,11 +363,10 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
                 <div></div><div></div><div></div>
             </div>""".encode())
 
-        # --- Show folders first, then files, just like your original layout ---
+        # --- Show folders first, then files ---
         folders, files = [], []
         for entry in sorted(entries):
             entry_abs = os.path.join(abs_path, entry)
-            # Only show visible (non-hidden) files/folders (optional)
             if os.path.isdir(entry_abs):
                 folders.append(entry)
             elif os.path.isfile(entry_abs):
@@ -402,7 +406,7 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
                 <div class="modal-box">  
                     <label for="password-input">Enter password:</label>  
                     <div id="modal-error" class="modal-error"></div>  
-                    <input id="password-input" type="password" autocomplete="off" />  
+                    <input id="password-input" type="password" autocomplete="new-password" />  
                     <button type="button" id="show-pass-btn" class="show-pass-btn" onclick="togglePassword()">Show</button>  
                     <div class="modal-actions">  
                         <button type="button" onclick="submitPasswordModal()">Submit</button>  
