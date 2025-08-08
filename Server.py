@@ -65,18 +65,28 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(f"""  
         <html>  
-        <head>  
+        <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">  
         <style>  
+        body {{
+            margin: 10px;
+            font-family: Arial, sans-serif;
+        }}
         .file-entry {{  
             display: flex;  
             justify-content: space-between;  
-            padding: 5px 0;  
+            padding: 8px 2px;  
             border-bottom: 1px solid #ccc;  
         }}  
         .file-entry div {{  
-            width: 25%;  
             word-break: break-word;  
-        }}  
+            padding: 0 5px;
+            overflow: hidden;
+        }}
+        .file-entry div:nth-child(1) {{ width: 25%; }}
+        .file-entry div:nth-child(2) {{ width: 25%; }}
+        .file-entry div:nth-child(3) {{ width: 25%; }}
+        .file-entry div:nth-child(4) {{ width: 25%; }}
         .modal-bg {{  
             display: none;  
             position: fixed;  
@@ -111,7 +121,7 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             width: 100%;  
             padding: 6px;  
             margin-bottom: 10px;  
-            padding-right: 50px; /* space for show/hide button */  
+            padding-right: 50px;
             box-sizing: border-box;
         }}  
         .modal-actions {{  
@@ -173,7 +183,56 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             cursor: pointer;  
             font-size: 12px;  
             padding: 2px 6px;  
-        }}  
+        }}
+        
+        /* Mobile Styles */
+        @media (max-width: 768px) {{
+            body {{
+                margin: 5px;
+            }}
+            .upload-container {{
+                flex-direction: column;
+                gap: 15px;
+            }}
+            .progress-container {{
+                flex: none;
+                width: 100%;
+                min-width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+            }}
+            .file-entry {{
+                font-size: 13px;
+                padding: 6px 1px;
+            }}
+            .file-entry div {{
+                padding: 0 3px;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                overflow: hidden;
+            }}
+            .file-entry div:nth-child(1) {{ width: 34%; }}
+            .file-entry div:nth-child(2) {{ width: 24%; }}
+            .file-entry div:nth-child(3) {{ width: 18%; }}
+            .file-entry div:nth-child(4) {{ width: 24%; }}
+            .modal-bg {{
+                align-items: flex-start;
+                padding-top: 30vh;
+            }}
+            .modal-box {{
+                padding: 15px 20px;
+                min-width: 90%;
+                max-width: 300px;
+            }}
+            .show-pass-btn {{
+                right: 30px;
+                top: 49px;
+            }}
+            h3 {{
+                font-size: 16px;
+                margin: 10px 0;
+            }}
+        }}
         </style>  
         <script>  
         let modalCallback = null;  
