@@ -75,7 +75,7 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
         .file-entry {{  
             display: flex;  
             justify-content: space-between;  
-            padding: 8px 2px;  
+            padding: 6px 2px;  
             border-bottom: 1px solid #ccc;  
         }}  
         .file-entry div {{  
@@ -110,6 +110,7 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
         .modal-error {{  
             color: #d32f2f;  
             font-size: 12px;  
+            margin-top: 5px;
             margin-bottom: 10px;  
             display: none;  
         }}  
@@ -193,6 +194,23 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             .upload-container {{
                 flex-direction: column;
                 gap: 15px;
+            }}
+            .upload-form-section {{
+                width: 100%;
+            }}
+            .upload-form-section form {{
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                align-items: center;
+            }}
+            .upload-form-section input[type="file"] {{
+                flex: 1;
+                min-width: 150px;
+            }}
+            .upload-form-section input[type="submit"] {{
+                flex: 0 0 auto;
+                min-width: 80px;
             }}
             .progress-container {{
                 flex: none;
@@ -464,9 +482,9 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             <div id="password-modal-bg" class="modal-bg">  
                 <div class="modal-box">  
                     <label for="password-input">Enter password:</label>  
-                    <div id="modal-error" class="modal-error"></div>  
                     <input id="password-input" type="password" autocomplete="new-password" />  
                     <button type="button" id="show-pass-btn" class="show-pass-btn" onclick="togglePassword()">Show</button>  
+                    <div id="modal-error" class="modal-error"></div>
                     <div class="modal-actions">  
                         <button type="button" onclick="submitPasswordModal()">Submit</button>  
                         <button type="button" onclick="hidePasswordModal()">Cancel</button>  
