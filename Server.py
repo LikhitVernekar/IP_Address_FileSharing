@@ -3,6 +3,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib
 import cgi
 import datetime
+import mimetypes
 
 UPLOAD_DIR = "/sdcard/Download/termux"  # Change this as needed
 PASSWORD = "letmein"  # Your chosen password
@@ -14,6 +15,16 @@ def safe_join(base, *paths):
     if os.path.commonpath([abs_base, dest]) != abs_base:
         raise ValueError("Blocked directory traversal")
     return dest
+
+def get_file_type(filename):
+    """Determine file type for preview"""
+    ext = os.path.splitext(filename.lower())[1]
+    if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg']:
+        return 'image'
+    elif ext == '.pdf':
+        return 'pdf'
+    else:
+        return 'other'
 
 class SimpleUploadServer(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -40,11 +51,27 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        # --- Serve a file download ---
+        # --- Handle download requests ---
+        if parsed_path.path.startswith('/download/'):
+            download_path = urllib.parse.unquote(parsed_path.path[10:])  # Remove '/download/' prefix
+            abs_download_path = safe_join(UPLOAD_DIR, download_path)
+            if os.path.isfile(abs_download_path):
+                self.send_response(200)
+                self.send_header("Content-type", "application/octet-stream")
+                self.send_header('Content-Disposition', f'attachment; filename="{os.path.basename(abs_download_path)}"')
+                self.end_headers()
+                with open(abs_download_path, "rb") as f:
+                    self.wfile.write(f.read())
+                return
+
+        # --- Serve a file for preview/viewing ---
         if os.path.isfile(abs_path):
+            mime_type, _ = mimetypes.guess_type(abs_path)
+            if mime_type is None:
+                mime_type = "application/octet-stream"
+            
             self.send_response(200)
-            self.send_header("Content-type", "application/octet-stream")
-            self.send_header('Content-Disposition', f'attachment; filename="{os.path.basename(abs_path)}"')
+            self.send_header("Content-type", mime_type)
             self.end_headers()
             with open(abs_path, "rb") as f:
                 self.wfile.write(f.read())
@@ -185,6 +212,30 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             font-size: 12px;  
             padding: 2px 6px;  
         }}
+
+        /* Image Preview Modal */
+        .image-modal {{
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }}
+        .image-modal.active {{
+            display: flex;
+        }}
+        .image-modal img {{
+            max-width: 90vw;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 8px;
+        }}
         
         /* Mobile Styles */
         @media (max-width: 768px) {{
@@ -257,6 +308,8 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
         let modalType = null;  
         let modalFile = null;  
         let cur_dir = {repr(curdir_param)};
+        let clickTimer = null;
+        
         function showPasswordModal(type, file, callback) {{  
             modalType = type;  
             modalFile = file;  
@@ -297,7 +350,48 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             const errorDiv = document.getElementById('modal-error');  
             errorDiv.textContent = message;  
             errorDiv.style.display = 'block';  
-        }}  
+        }}
+
+        function showImagePreview(imagePath) {{
+            const modal = document.getElementById('image-modal');
+            const img = document.getElementById('preview-image');
+            img.src = '/' + imagePath;
+            modal.classList.add('active');
+        }}
+
+        function hideImagePreview() {{
+            const modal = document.getElementById('image-modal');
+            modal.classList.remove('active');
+        }}
+
+        function handleFileClick(filePath, fileType, event) {{
+            event.preventDefault();
+            
+            if (clickTimer) {{
+                // Double click detected
+                clearTimeout(clickTimer);
+                clickTimer = null;
+                downloadFile(filePath);
+            }} else {{
+                // Single click - wait to see if double click follows
+                clickTimer = setTimeout(() => {{
+                    clickTimer = null;
+                    if (fileType === 'image') {{
+                        showImagePreview(filePath);
+                    }} else if (fileType === 'pdf') {{
+                        window.open('/' + filePath, '_blank');
+                    }} else {{
+                        downloadFile(filePath);
+                    }}
+                }}, 300); // 300ms delay to detect double click
+            }}
+            return false;
+        }}
+
+        function downloadFile(filePath) {{
+            window.location.href = '/download/' + filePath;
+        }}
+
         window.addEventListener('DOMContentLoaded', function() {{  
             document.getElementById('password-modal-bg').addEventListener('mousedown', function(e) {{  
                 if (e.target === this) {{  
@@ -308,7 +402,13 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
                 if (e.key === 'Enter') {{  
                     submitPasswordModal();  
                 }}  
-            }});  
+            }});
+            
+            // Image modal close on click
+            document.getElementById('image-modal').addEventListener('click', function() {{
+                hideImagePreview();
+            }});
+            
             // Progress bar logic  
             const uploadForm = document.getElementById('upload-form');  
             const fileInput = document.getElementById('file-input');  
@@ -470,8 +570,10 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
             entry_abs = os.path.join(abs_path, entry)
             size_kb = os.path.getsize(entry_abs) // 1024
             modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(entry_abs)).strftime('%Y-%m-%d %H:%M:%S')
+            file_type = get_file_type(entry)
+            
             self.wfile.write(f"""<div class="file-entry">  
-                <div><a href='/{encoded_name}' target="_blank">{entry}</a></div>  
+                <div><a href="#" onclick="return handleFileClick('{encoded_name}', '{file_type}', event);">{entry}</a></div>  
                 <div>{modified_time}</div>  
                 <div>{size_kb} KB</div>  
                 <div><a href="#" onclick="confirmDelete('{entry}');return false;" style="color:red;">Delete</a></div>  
@@ -479,6 +581,13 @@ class SimpleUploadServer(BaseHTTPRequestHandler):
 
         self.wfile.write(b"""  
             </div>  
+            
+            <!-- Image Preview Modal -->
+            <div id="image-modal" class="image-modal">
+                <img id="preview-image" src="" alt="Preview" />
+            </div>
+            
+            <!-- Password Modal -->
             <div id="password-modal-bg" class="modal-bg">  
                 <div class="modal-box">  
                     <label for="password-input">Enter password:</label>  
