@@ -3,6 +3,7 @@ from flask_socketio import SocketIO, emit
 import os
 from werkzeug.utils import secure_filename
 import socket
+import uuid
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -28,7 +29,7 @@ def index():
 <html>
 <head>
     <title>Chat</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
     <style>
         body { font-family: sans-serif; margin: 0; }
@@ -60,6 +61,21 @@ def index():
             display: block;
             margin-top: 5px;
             border: 1px solid #ccc;
+            cursor: pointer;
+        }
+        .file-link {
+            display: inline-block;
+            margin-top: 5px;
+            padding: 8px 12px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #333;
+            font-size: 13px;
+        }
+        .file-link:hover {
+            background: #e0e0e0;
         }
         #form {
             display: flex;
@@ -82,6 +98,17 @@ def index():
             max-height: 50px;
             border: 1px solid #ccc;
         }
+        .preview-file {
+            max-width: 120px;
+            padding: 5px 8px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 11px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .remove-btn {
             position: absolute;
             top: -5px;
@@ -100,6 +127,62 @@ def index():
             resize: none;
             padding: 5px;
             font-size: 14px;
+        }
+        
+        /* Upload button styles */
+        .upload-btn {
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .upload-btn:hover {
+            background: #e0e0e0;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .form-controls {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        
+        .form-controls textarea {
+            flex: 1;
+        }
+        
+        /* Paste indicator */
+        .paste-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 8px;
+            font-size: 16px;
+            z-index: 3000;
+            display: none;
+        }
+        
+        .paste-indicator.show {
+            display: block;
+            animation: fadeInOut 1.5s;
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
         }
         
         /* Mobile floating button - minimal design */
@@ -129,7 +212,6 @@ def index():
             left: 0;
             width: 100vw;
             height: 100vh;
-            height: 100dvh; /* For better mobile support */
             background: white;
             z-index: 1001;
             flex-direction: column;
@@ -159,20 +241,28 @@ def index():
             color: #666;
         }
         
-        /* Mobile messages area - same styling as desktop */
+        /* Mobile messages area */
         #messages-mobile {
             flex: 1;
             overflow-y: auto;
             padding: 10px;
+            padding-bottom: 120px;
         }
         
-        /* Mobile form - same styling as desktop */
+        /* Mobile form */
         #form-mobile {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
             display: flex;
             flex-direction: column;
-            padding: 5px;
+            padding: 10px;
+            background: white;
             border-top: 1px solid #ccc;
             flex-shrink: 0;
+            box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
+            z-index: 10;
         }
         
         #preview-container-mobile {
@@ -185,8 +275,10 @@ def index():
         #input-mobile {
             height: 50px;
             resize: none;
-            padding: 5px;
-            font-size: 16px; /* Prevents zoom on iOS */
+            padding: 8px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
         }
         
         /* Show mobile elements only on mobile */
@@ -207,46 +299,23 @@ def index():
                 display: none !important;
             }
         }
-        
-        /* Handle keyboard on mobile */
-        @media (max-width: 767px) {
-            #mobile-chat-overlay {
-                height: 100vh;
-                height: 100dvh;
-            }
-            
-            /* When keyboard opens, ensure entire form is above keyboard */
-            .keyboard-open #mobile-chat-overlay {
-                padding-bottom: 20px; /* Extra space above keyboard */
-            }
-            
-            .keyboard-open #form-mobile {
-                position: fixed;
-                bottom: 20px; /* Always stay 20px above keyboard */
-                left: 0;
-                right: 0;
-                background: white;
-                border-top: 1px solid #ccc;
-                z-index: 10;
-                /* Ensure the entire form including border is visible */
-                box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
-            }
-            
-            .keyboard-open #messages-mobile {
-                /* Adjust messages area to not overlap with fixed form */
-                padding-bottom: 80px; /* Space for the fixed form */
-            }
-        }
     </style>
 </head>
 <body>
-    <!-- Original Desktop Chat (unchanged) -->
+    <!-- Paste Indicator -->
+    <div id="paste-indicator" class="paste-indicator">Image pasted! 📋</div>
+    
+    <!-- Original Desktop Chat -->
     <div id="chat-container">
         <div id="chat">
             <div id="messages"></div>
             <form id="form">
                 <div id="preview-container"></div>
-                <textarea id="input" placeholder="Type message here or drop images..." rows="2"></textarea>
+                <div class="form-controls">
+                    <textarea id="input" placeholder="Type message here, drop/paste images..." rows="2"></textarea>
+                    <input type="file" id="file-input" class="file-input" multiple>
+                    <button type="button" class="upload-btn" onclick="document.getElementById('file-input').click()">📎</button>
+                </div>
             </form>
         </div>
     </div>
@@ -263,7 +332,11 @@ def index():
         <div id="messages-mobile"></div>
         <form id="form-mobile">
             <div id="preview-container-mobile"></div>
-            <textarea id="input-mobile" placeholder="Type message here or drop images..." rows="2"></textarea>
+            <div class="form-controls">
+                <textarea id="input-mobile" placeholder="Type message here, drop/paste images..." rows="2"></textarea>
+                <input type="file" id="file-input-mobile" class="file-input" multiple>
+                <button type="button" class="upload-btn" onclick="document.getElementById('file-input-mobile').click()">📎</button>
+            </div>
         </form>
     </div>
     
@@ -272,11 +345,12 @@ def index():
         var pendingFiles = [];
         var isMobileOverlayOpen = false;
         
-        // Original desktop functionality (unchanged)
+        // Original desktop functionality
         var form = document.getElementById('form');
         var input = document.getElementById('input');
         var messages = document.getElementById('messages');
         var previewContainer = document.getElementById('preview-container');
+        var pasteIndicator = document.getElementById('paste-indicator');
 
         socket.on('connect', function() {
             socket.emit('request_history');
@@ -299,6 +373,15 @@ def index():
                 e.preventDefault();
                 sendMessage();
             }
+        });
+        
+        // File input handler for desktop
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            for (let file of e.target.files) {
+                pendingFiles.push(file);
+                showPreview(file, previewContainer);
+            }
+            e.target.value = '';
         });
 
         function sendMessage() {
@@ -329,32 +412,75 @@ def index():
         input.addEventListener('drop', function(e) {
             e.preventDefault();
             for (let file of e.dataTransfer.files) {
-                if (file.type.startsWith("image/")) {
-                    pendingFiles.push(file);
-                    showPreview(file, previewContainer);
+                pendingFiles.push(file);
+                showPreview(file, previewContainer);
+            }
+        });
+        
+        // PASTE functionality for desktop
+        document.addEventListener('paste', function(e) {
+            if (window.innerWidth >= 768 || isMobileOverlayOpen) {
+                var items = e.clipboardData.items;
+                var hasImage = false;
+                
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        hasImage = true;
+                        var blob = items[i].getAsFile();
+                        var uniqueName = 'pasted-image-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) + '.png';
+                        var file = new File([blob], uniqueName, { type: blob.type });
+                        
+                        pendingFiles.push(file);
+                        
+                        var currentPreview = isMobileOverlayOpen ? 
+                            document.getElementById('preview-container-mobile') : 
+                            previewContainer;
+                        showPreview(file, currentPreview);
+                    }
+                }
+                
+                if (hasImage) {
+                    showPasteIndicator();
+                    e.preventDefault();
                 }
             }
         });
+        
+        function showPasteIndicator() {
+            pasteIndicator.classList.add('show');
+            setTimeout(function() {
+                pasteIndicator.classList.remove('show');
+            }, 1500);
+        }
 
         function showPreview(file, container) {
-            var reader = new FileReader();
-            reader.onload = function(e) {
-                var div = document.createElement('div');
-                div.classList.add('preview-item');
-                var img = document.createElement('img');
-                img.src = e.target.result;
-                var btn = document.createElement('button');
-                btn.textContent = '×';
-                btn.classList.add('remove-btn');
-                btn.onclick = function() {
-                    pendingFiles = pendingFiles.filter(f => f !== file);
-                    container.removeChild(div);
+            var div = document.createElement('div');
+            div.classList.add('preview-item');
+            
+            if (file.type.startsWith('image/')) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    var img = document.createElement('img');
+                    img.src = e.target.result;
+                    div.appendChild(img);
                 };
-                div.appendChild(img);
-                div.appendChild(btn);
-                container.appendChild(div);
+                reader.readAsDataURL(file);
+            } else {
+                var fileLabel = document.createElement('div');
+                fileLabel.classList.add('preview-file');
+                fileLabel.textContent = file.name;
+                div.appendChild(fileLabel);
+            }
+            
+            var btn = document.createElement('button');
+            btn.textContent = '×';
+            btn.classList.add('remove-btn');
+            btn.onclick = function() {
+                pendingFiles = pendingFiles.filter(f => f !== file);
+                container.removeChild(div);
             };
-            reader.readAsDataURL(file);
+            div.appendChild(btn);
+            container.appendChild(div);
         }
 
         socket.on('message', function(msg) {
@@ -367,13 +493,16 @@ def index():
             var html = '<b>' + user + ':</b>';
             if (text) html += ' ' + text;
             if (images && images.length > 0) {
-                images.forEach(src => {
-                    html += '<br><img src="' + src + '" onclick="openImage(this.src)">';
+                images.forEach(fileInfo => {
+                    if (fileInfo.type === 'image') {
+                        html += '<br><img src="' + fileInfo.url + '" onclick="openImage(this.src)">';
+                    } else {
+                        html += '<br><a href="' + fileInfo.url + '" class="file-link" target="_blank" download>📄 ' + fileInfo.name + '</a>';
+                    }
                 });
             }
             item.innerHTML = html;
             
-            // Add to both desktop and mobile
             messages.appendChild(item.cloneNode(true));
             document.getElementById('messages-mobile').appendChild(item);
             
@@ -419,7 +548,6 @@ def index():
             var mobileInput = document.getElementById('input-mobile');
             var mobilePreview = document.getElementById('preview-container-mobile');
             
-            // Clear any existing event listeners by replacing the form
             var newForm = mobileForm.cloneNode(true);
             mobileForm.parentNode.replaceChild(newForm, mobileForm);
             
@@ -446,25 +574,29 @@ def index():
             newInput.addEventListener('drop', function(e) {
                 e.preventDefault();
                 for (let file of e.dataTransfer.files) {
-                    if (file.type.startsWith("image/")) {
-                        pendingFiles.push(file);
-                        showPreview(file, newPreview);
-                    }
+                    pendingFiles.push(file);
+                    showPreview(file, newPreview);
                 }
             });
             
-            // Simple keyboard handling - no viewport manipulation
+            // Handle keyboard visibility
             newInput.addEventListener('focus', function() {
-                document.body.classList.add('keyboard-open');
+                setTimeout(function() {
+                    newInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 300);
             });
             
-            newInput.addEventListener('blur', function() {
-                document.body.classList.remove('keyboard-open');
-            });
+            // File input handler for mobile
+            var mobileFileInput = document.getElementById('file-input-mobile');
+            var newFileInput = mobileFileInput.cloneNode(true);
+            mobileFileInput.parentNode.replaceChild(newFileInput, mobileFileInput);
             
-            // Ensure input stays functional after sending messages
-            newInput.addEventListener('input', function() {
-                // Keep input active and responsive
+            newFileInput.addEventListener('change', function(e) {
+                for (let file of e.target.files) {
+                    pendingFiles.push(file);
+                    showPreview(file, newPreview);
+                }
+                e.target.value = '';
             });
         }
     </script>
@@ -476,15 +608,25 @@ def index():
 def upload():
     text = request.form.get('text', '')
     files = request.files.getlist('files')
-    urls = []
+    file_infos = []
+    
     for file in files:
         filename = secure_filename(file.filename)
+        if os.path.exists(os.path.join(UPLOAD_FOLDER, filename)):
+            name, ext = os.path.splitext(filename)
+            filename = f"{name}_{uuid.uuid4().hex[:8]}{ext}"
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
-        urls.append(f"/uploads/{filename}")
+        
+        file_type = 'image' if file.content_type and file.content_type.startswith('image/') else 'file'
+        file_infos.append({
+            'url': f"/uploads/{filename}",
+            'name': filename,
+            'type': file_type
+        })
 
     ip = request.remote_addr
-    msg = {"user": ip, "text": text, "images": urls, "type": "mixed"}
+    msg = {"user": ip, "text": text, "images": file_infos, "type": "mixed"}
     chat_history.append(msg)
     socketio.emit('message', msg)
     return '', 204
