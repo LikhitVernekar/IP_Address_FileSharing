@@ -129,6 +129,53 @@ def index():
             font-size: 14px;
         }
         
+        /* Upload progress styles */
+        .upload-progress {
+            width: 120px;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .upload-progress-text {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+        
+        .upload-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 5px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         /* Upload button styles */
         .upload-btn {
             background: #f0f0f0;
@@ -144,6 +191,11 @@ def index():
             background: #e0e0e0;
         }
         
+        .upload-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
         .file-input {
             display: none;
         }
@@ -156,6 +208,11 @@ def index():
         
         .form-controls textarea {
             flex: 1;
+        }
+        
+        .form-controls textarea:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
         }
         
         /* Paste indicator */
@@ -314,7 +371,7 @@ def index():
                 <div class="form-controls">
                     <textarea id="input" placeholder="Type message here, drop/paste images..." rows="2"></textarea>
                     <input type="file" id="file-input" class="file-input" multiple>
-                    <button type="button" class="upload-btn" onclick="document.getElementById('file-input').click()">📎</button>
+                    <button type="button" class="upload-btn" id="upload-btn" onclick="document.getElementById('file-input').click()">📎</button>
                 </div>
             </form>
         </div>
@@ -335,7 +392,7 @@ def index():
             <div class="form-controls">
                 <textarea id="input-mobile" placeholder="Type message here, drop/paste images..." rows="2"></textarea>
                 <input type="file" id="file-input-mobile" class="file-input" multiple>
-                <button type="button" class="upload-btn" onclick="document.getElementById('file-input-mobile').click()">📎</button>
+                <button type="button" class="upload-btn" id="upload-btn-mobile" onclick="document.getElementById('file-input-mobile').click()">📎</button>
             </div>
         </form>
     </div>
@@ -344,6 +401,7 @@ def index():
         var socket = io();
         var pendingFiles = [];
         var isMobileOverlayOpen = false;
+        var isUploading = false;
         
         // Original desktop functionality
         var form = document.getElementById('form');
@@ -369,7 +427,7 @@ def index():
         });
 
         input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !isUploading) {
                 e.preventDefault();
                 sendMessage();
             }
@@ -385,22 +443,72 @@ def index():
         });
 
         function sendMessage() {
+            if (isUploading) return;
+            
             var currentInput = isMobileOverlayOpen ? document.getElementById('input-mobile') : input;
             var currentPreview = isMobileOverlayOpen ? document.getElementById('preview-container-mobile') : previewContainer;
             
             if (currentInput.value.trim() || pendingFiles.length > 0) {
+                isUploading = true;
+                setUploadingState(true);
+                
+                // Show upload progress indicator
+                var progressDiv = document.createElement('div');
+                progressDiv.classList.add('upload-progress');
+                progressDiv.innerHTML = `
+                    <div class="upload-progress-text">Uploading...</div>
+                    <div class="upload-spinner"></div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+                `;
+                currentPreview.appendChild(progressDiv);
+                
                 var formData = new FormData();
                 pendingFiles.forEach(file => {
                     formData.append('files', file);
                 });
                 formData.append('text', currentInput.value.trim());
 
-                fetch('/upload', { method: 'POST', body: formData });
-
-                currentInput.value = '';
-                pendingFiles = [];
-                currentPreview.innerHTML = '';
+                // Use XMLHttpRequest for progress tracking
+                var xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        var percentComplete = (e.loaded / e.total) * 100;
+                        var progressBar = document.getElementById('progress-bar');
+                        if (progressBar) {
+                            progressBar.style.width = percentComplete + '%';
+                        }
+                    }
+                });
+                
+                xhr.addEventListener('load', function() {
+                    isUploading = false;
+                    setUploadingState(false);
+                    currentInput.value = '';
+                    pendingFiles = [];
+                    currentPreview.innerHTML = '';
+                });
+                
+                xhr.addEventListener('error', function() {
+                    isUploading = false;
+                    setUploadingState(false);
+                    alert('Upload failed. Please try again.');
+                    currentPreview.removeChild(progressDiv);
+                });
+                
+                xhr.open('POST', '/upload');
+                xhr.send(formData);
             }
+        }
+        
+        function setUploadingState(uploading) {
+            var currentInput = isMobileOverlayOpen ? document.getElementById('input-mobile') : input;
+            var uploadBtn = isMobileOverlayOpen ? document.getElementById('upload-btn-mobile') : document.getElementById('upload-btn');
+            
+            currentInput.disabled = uploading;
+            uploadBtn.disabled = uploading;
         }
 
         // Drag & Drop for desktop
@@ -411,15 +519,17 @@ def index():
 
         input.addEventListener('drop', function(e) {
             e.preventDefault();
-            for (let file of e.dataTransfer.files) {
-                pendingFiles.push(file);
-                showPreview(file, previewContainer);
+            if (!isUploading) {
+                for (let file of e.dataTransfer.files) {
+                    pendingFiles.push(file);
+                    showPreview(file, previewContainer);
+                }
             }
         });
         
         // PASTE functionality for desktop
         document.addEventListener('paste', function(e) {
-            if (window.innerWidth >= 768 || isMobileOverlayOpen) {
+            if (!isUploading && (window.innerWidth >= 768 || isMobileOverlayOpen)) {
                 var items = e.clipboardData.items;
                 var hasImage = false;
                 
@@ -559,7 +669,7 @@ def index():
             });
 
             newInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !isUploading) {
                     e.preventDefault();
                     sendMessage();
                 }
@@ -573,9 +683,11 @@ def index():
 
             newInput.addEventListener('drop', function(e) {
                 e.preventDefault();
-                for (let file of e.dataTransfer.files) {
-                    pendingFiles.push(file);
-                    showPreview(file, newPreview);
+                if (!isUploading) {
+                    for (let file of e.dataTransfer.files) {
+                        pendingFiles.push(file);
+                        showPreview(file, newPreview);
+                    }
                 }
             });
             
